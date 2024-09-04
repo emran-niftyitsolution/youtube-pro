@@ -7,15 +7,17 @@ import {
   BackHandler,
   Dimensions,
   GestureResponderEvent,
+  Linking,
   PanResponder,
   PanResponderGestureState,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
-import { WebView } from "react-native-webview";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
 
-const { width: screenWidth } = Dimensions.get("window");
+const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 export default function App() {
   const webViewRef = useRef<WebView>(null); // WebView reference for controlling JS injection
@@ -36,6 +38,7 @@ export default function App() {
     top: 0,
     left: 0,
   });
+  const [downloadUrl, setDownloadUrl] = useState<string>("");
 
   // Handle back press on Android
   const handleBackPress = () => {
@@ -102,19 +105,15 @@ export default function App() {
 
     // Function to monitor if video is playing or paused
     const monitorVideoState = () => {
+      if (!videoElement) return;
+
       videoElement.addEventListener('play', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: true }));
-      });
-      videoElement.addEventListener('pause', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: false }));
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: true, src: videoElement.currentSrc }));
       });
 
-      // Initial video state
-      if (!videoElement.paused) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: true }));
-      } else {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: false }));
-      }
+      videoElement.addEventListener('pause', () => {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: false, src: videoElement.currentSrc }));
+      });
 
       // Send video element dimensions
       const rect = videoElement.getBoundingClientRect();
@@ -125,6 +124,13 @@ export default function App() {
         top: rect.top, 
         left: rect.left 
       }));
+
+      // Initial video state
+      if (!videoElement.paused) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: true, src: videoElement.currentSrc }));
+      } else {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_PLAYING', playing: false, src: videoElement.currentSrc }));
+      }
     };
 
     // Run the ad blocker every second to catch dynamically loaded ads
@@ -144,12 +150,16 @@ export default function App() {
   };
 
   // Handle WebView messages
-  const onMessage = (event: any) => {
+  const onMessage = (event: WebViewMessageEvent) => {
     const data = JSON.parse(event.nativeEvent.data);
 
     if (data.type === "VIDEO_PLAYING") {
       setVideoPlaying(data.playing);
+      if (data.src) {
+        setDownloadUrl(data.src); // Set the video URL to download
+      }
     } else if (data.type === "VIDEO_DIMENSIONS") {
+      console.log("Video dimensions received:", data);
       setVideoDimensions({
         width: data.width,
         height: data.height,
@@ -221,6 +231,16 @@ export default function App() {
     onPanResponderRelease: () => {},
   });
 
+  // Trigger the download action
+  const downloadVideo = () => {
+    if (downloadUrl) {
+      // Open the download URL (you can handle this differently if needed)
+      Linking.openURL(downloadUrl);
+    } else {
+      Alert.alert("No Video", "No video URL found to download.");
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View {...panResponder.panHandlers} style={styles.webviewWrapper}>
@@ -241,6 +261,13 @@ export default function App() {
           )}
         />
       </View>
+
+      {/* Download Button */}
+      {videoPlaying && (
+        <TouchableOpacity style={styles.downloadButton} onPress={downloadVideo}>
+          <Text style={styles.downloadText}>Download Video</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Overlay for brightness and volume feedback */}
       {showOverlay && (
@@ -292,5 +319,17 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 18,
     color: "red",
+  },
+  downloadButton: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    backgroundColor: "#ff5722",
+    padding: 10,
+    borderRadius: 5,
+  },
+  downloadText: {
+    color: "white",
+    fontSize: 16,
   },
 });
